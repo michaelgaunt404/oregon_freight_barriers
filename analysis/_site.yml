@@ -1,7 +1,7 @@
-name: "freight_bottlenecks"
+name: "oregon_freight_plan"
 output_dir: ../docs
 navbar:
-  title: "freight_bottlenecks"
+  title: "oregon_freight_plan"
   left:
   - text: Home
     href: index.html
