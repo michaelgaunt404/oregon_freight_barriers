@@ -154,15 +154,17 @@ tops_fltrd = tops %>%
   janitor::remove_empty(c("rows")) %>%
   mutate(length = st_length(.)
          ,across(c(F_SYSTEM, NHS, FACILITY_T, ACCESS_CTL, ROUTE_ID), as.factor)) %>%
-  select(F_SYSTEM, NHS, FACILITY_T, ACCESS_CTL, ROUTE_ID, AADT, TRUCK
-         ,starts_with("RTE")
+  select(F_SYSTEM, NHS, FACILITY_T, ACCESS_CTL, TRUCK
+         ,starts_with("RTE"), starts_with("ROUTE"), contains("AADT"), LANE_WIDTH
          ,contains("GRADES"), starts_with("SHD_"), length) %>%
   mutate(length_miles = as.numeric(length/1609.344)
-         ,VMT = AADT*365*length_miles)
+         ,VMT = AADT*365*length_miles
+         ,across(starts_with("GRADES"), ~replace_na(.x, 0))) %>%
+  select(!length)
 
-tops_fltrd %>%
-  filter(NHS == 1) %>%
-  mapview(zcol = "VMT")
+# tops_fltrd %>%
+#   filter(NHS == 1) %>%
+#   mapview(zcol = "VMT")
 
 # tops_fltrd %>%
 #   mutate(length = st_length(.)) %>%
@@ -177,28 +179,32 @@ tops_fltrd %>%
 #   st_jitter(.002) %>%
 #   quick_leaflet(lines = T)
 
+#
+# tops_fltrd %>%
+#   filter(NHS == 1) %>%
+#   st_drop_geometry() %>%
+#   janitor::remove_constant() %>%
+#   glimpse()
 
-tops_fltrd %>%
-  filter(NHS == 1) %>%
-  st_drop_geometry() %>%
-  janitor::remove_constant() %>%
-  glimpse()
+#
+# tops_fltrd %>%
+#   janitor::remove_constant() %>%
+#   st_drop_geometry() %>%
+#   select_if(is.integer) %>%
+#   mutate(across(everything(), as.factor)) %>%
+#   skimr::skim()
+#
+# crashes %>%
+#   sample_n(2000) %>%
+#   mapview()
+#   quick_leaflet(markers = T)
+#
+# crashes %>%
+#   sample_n(2000)
 
-
-tops_fltrd %>%
-  janitor::remove_constant() %>%
-  st_drop_geometry() %>%
-  select_if(is.integer) %>%
-  mutate(across(everything(), as.factor)) %>%
-  skimr::skim()
-
-crashes %>%
-  sample_n(2000) %>%
-  mapview()
-  quick_leaflet(markers = T)
-
-crashes %>%
-  sample_n(2000)
+network %>%
+  filter(TRUCK == 1) %>%
+  mapvi
 
 
 mapview(tops_fltrd, z = "ROUTE_ID")
@@ -234,13 +240,21 @@ mapview(tops_fltrd[tops_fltrd$F_SYSTEM %in% c(1, 2, 3),], z = "F_SYSTEM"
 #   sample_n(10) %>%
 #   glimpse()
 
+tops %>%
+  filter(NHS == 1) %>%  mapview()
+
+
+
+#make network from HPMS data-----
+#--->all numeric levels indicate if level is on NHS network
+#--->1 means nonConnector NHS
+#--->NA means non-HMS
 network = tops_fltrd[tops_fltrd$NHS == 1,] %>%
-  # select(F_SYSTEM, NHS, FACILITY_T, ACCESS_CTL, ROUTE_ID) %>%
   filter(!st_is_empty(.)) %>%
   distinct() %>%
   mutate(id = row_number())
 
-index_2 = c(500, 400, 300, 200, 100) %>%
+index_2 = c(200, 100, 50) %>%
   map(~{
     network_buffer = network %>%
       quick_buffer(with = 2285,
@@ -250,14 +264,14 @@ index_2 = c(500, 400, 300, 200, 100) %>%
       nrow()
   }) %>%
   unlist()
-
-((index-index[1])/index[1]) %>% abs() %>% plot()
-
-network_buffer = network %>%
-  quick_buffer(with = 2285, radius = 200)
+#
+((index_2-index_2[1])/index_2[1]) %>% abs() %>% plot()
+#
+# network_buffer = network %>%
+#   quick_buffer(with = 2285, radius = 200)
 
 crashes_fltrd = crashes %>%
-  filter(NHS_FLG == 1) %>%
+  # filter(NHS_FLG == 1) %>%
   st_filter(network_buffer) %>%
   select(NHS_FLG, HWY_NO, HWY_MED_NM, CITY_SECT_NM
          ,ends_with("_SHORT_DESC"), ends_with("_CNT")) %>%
@@ -285,11 +299,10 @@ crash_links = crashes_fltrd_snppd %>%
          ,collision_rate_ftl = dgt0(VMT/collisions_ftl)
          ,collision_rate_inj = dgt0(VMT/collisions_inj)
          ,collision_rate_inj_only = dgt0(VMT/collisions_inj_only)) %>%
-  mutate(across(c(length, length_miles, VMT), dgt2)) %>%
-  arrange(collision_rate) %>%
-  select(!length)
+  mutate(across(c(length_miles, VMT), dgt2)) %>%
+  arrange(collision_rate)
 
-crash_links_hdi = HDInterval::hdi(crash_links$collision_rate, .8)
+crash_links_hdi = HDInterval::hdi(crash_links$collision_rate, .1)
 crash_links_hdi = HDInterval::hdi(crash_links$collision_rate, .8)
 
 crash_links %>%
@@ -302,18 +315,24 @@ crash_links %>%
              ,scales = "free")
   coord_cartesian(xlim = c(NA, crash_links_hdi[[2]]))
 
-crash_links %>%
-  # filter(collision_rate<crash_links_hdi[[2]]) %>%
-  filter(collision_rate < quantile(collision_rate, probs = .5, na.rm = T)) %>%
-  mapview(zcol = "collision_rate",
+  map = crash_links %>%
+  mutate(collision_rate_flg = case_when(collision_rate < quantile(collision_rate, probs = .1, na.rm = T)~"Top 10%",
+                                        collision_rate < quantile(collision_rate, probs = .25, na.rm = T)~"Top 25%",
+                                        collision_rate < quantile(collision_rate, probs = .5, na.rm = T)~"Top 50%",
+                                        T~"z_Other")) %>%
+  # filter(collision_rate < quantile(collision_rate, probs = .5, na.rm = T)) %>%
+  mapview(zcol = "collision_rate_flg",
           layer.name = "Collision Rate")
 
-crashes_fltrd %>%
+map = crashes_fltrd %>%
   st_join(., network,
           join = st_nearest_feature, left = T) %>%
   mapview(zcol = "ROUTE_ID") +
   mapview(network)
 
+htmltools::save_html(map, "./public/map_snapped_collisions.html")
+  htmlwidgets::saveWidget(map, "./public/map_snapped_collisions.html")
+  mapshot(map, "./public/map_snapped_collisions.html")
 
 crashes %>%
   filter(TOT_FATAL_CNT != 0) %>%
@@ -327,8 +346,277 @@ crashes %>%
 
 #SECTION: workflow==============================================================
 
+# map =
+  tops_fltrd %>%
+  filter(!is.na(NHS)) %>%
+  mutate(NHS_Detail = case_when(NHS == 1 ~ "Non-Connector NHS"
+                                ,NHS == 2 ~ "Major Airport"
+                                ,NHS == 3 ~ "Major Port Facility"
+                                ,NHS == 4 ~ "Major Amtrack Station"
+                                ,NHS == 5 ~ "Major Rail or Truck Terminal"
+                                ,NHS == 6 ~ "Major INter City Bus Terminal"
+                                ,NHS == 7 ~ "Major Public Trans. or Multi-Modal Terminal"
+                                ,NHS == 8 ~ "Major Ferry Terminal"
+                                ,T~ "Major Ferry Terminal") %>%
+           as.factor())
+  # st_centroid() %>%
+  # sample_n(100) %>%
 
-#SECTION: workflow==============================================================
+yolo %>%
+  leaflet() %>%
+  # addTiles() %>%
+  addProviderTiles(providers$CartoDB.Voyager) %>%
+  addPolylines(
+    label = ~paste0("Highway: ", Route_Name, " _ ", NHS_Detail),
+    popup= ~paste0("Highway: ", Route_Name, " _ ", NHS_Detail),
+    group = "hidemarkers_1",
+    labelOptions = labelOptions(permanent = TRUE)
+  )
+  # addLabelgun("hidemarkers_1")
+
+
+yolo = tops_fltrd %>%
+  filter(NHS == 1) %>%
+  # filter(ROUTE_NUM == 5 |
+  #          ROUTE_NUM == 30) %>%
+  mutate(Route_Name = ROUTE_NUM) %>%
+  mutate(NHS_Detail = case_when(NHS == 1 ~ "Non-Connector NHS"
+                                ,NHS == 2 ~ "Major Airport"
+                                ,NHS == 3 ~ "Major Port Facility"
+                                ,NHS == 4 ~ "Major Amtrack Station"
+                                ,NHS == 5 ~ "Major Rail or Truck Terminal"
+                                ,NHS == 6 ~ "Major INter City Bus Terminal"
+                                ,NHS == 7 ~ "Major Public Trans. or Multi-Modal Terminal"
+                                ,NHS == 8 ~ "Major Ferry Terminal"
+                                ,T~ "Major Ferry Terminal")) %>%
+  group_by(ROUTE_NUM) %>%
+  group_map(~{
+    .x %>%
+      st_union() %>%
+      st_as_sf() %>%
+      bind_cols(
+        .x %>%
+          select(Route_Name, NHS_Detail) %>%
+          st_drop_geometry() %>%
+          unique() %>%
+          data.frame(),
+        .)
+
+
+  }) %>%
+  reduce(bind_rows) %>%
+  st_as_sf()
+
+places = tigris::places(state = "OR") %>%
+  st_transform(4326) %>%
+  st_filter(counties)
+
+county = tigris::counties(state = "OR") %>%
+  st_transform(4326) %>%
+  filter(NAME %in% c("Clackamas", "Multnomah", "Washington"))
+
+
+
+(  mapview(tops_fltrd %>%
+            filter(NHS == 1), zcol = "ROUTE_NUM", burst = T, homebutton = F, legend = F, lwd = 5, alpha = .5) +
+    mapview(county, label = "NAME", layer.name = "Study Area - Counties", alpha.regions = .1, legend = F, homebutton = F) +
+    mapview(places, label = "NAMELSAD", zcol = "NAME", layer.name = "Study Area - Cities", alpha.regions = .1, legend = F, homebutton = F)) %>%
+    mapshot( "./public/NHS_map_2.html")
+
+
+tops_fltrd %>%
+  filter(NHS == 1) %>%
+  leaflet() %>%
+  addTiles() %>%
+  addPolylines(
+    label = ~str_glue("{ROUTE_N_T}")
+    ,labelOptions = labelOptions(noHide = F, textOnly = F)
+
+    ,popup = popup_tbl_pretty(tops_fltrd %>%
+                                          filter(NHS == 1) ))
+
+tops %>%
+  select(ROUTE_NUM, NHS) %>%
+  st_filter(counties) %>%
+  filter(!is.na(ROUTE_NUM)) %>%
+  leaflet() %>%
+  addTiles() %>%
+  addPolylines(
+    label = ~str_glue("{ROUTE_NUM} -- {NHS}")
+    ,labelOptions = labelOptions(noHide = F, textOnly = F))
+
+
+# test = tops_fltrd %>%
+#   filter(NHS == 1)
+#
+# test_item = test %>%
+#   group_by(ROUTE_NUM) %>%
+#   group_map(~{
+#     .x
+#   })
+
+test_item %>%
+  map(~.x %>%
+        pull(tops_fltrd$ROUTE_NUM) %>%
+        unique())
+
+test_names =  tops_fltrd %>%
+  pull(ROUTE_NUM) %>%
+  unique()
+
+test_names = test_names[order(test_names)]
+
+test_item = test_names %>%
+  map(~tops_fltrd %>%
+        filter(ROUTE_NUM == .x))
+
+base = leaflet() %>%
+  addTiles() %>%
+  addTiles(group = "OSM (default)") %>%
+  addProviderTiles(providers$Esri, group = "Esri") %>%
+  addProviderTiles(providers$CartoDB.Positron, group = "CartoDB") %>%
+  addProviderTiles(providers$CartoDB.PositronNoLabels, group = "CartoDB_noLabels") %>%
+  addLayersControl(
+    baseGroups = c("OSM (default)", "Esri", "CartoDB", "CartoDB_noLabels")
+    ,overlayGroups =
+      c("Study Area - Counties", "Study Area - Cities<br><hr><strong>NHS Links:</strong>"
+        ,"NHS # - 5", "NHS # - 8", "NHS # - 10", "NHS # - 26", "NHS # - 30", "NHS # - 35", "NHS # - 43"
+        ,"NHS # - 47", "NHS # - 84", "NHS # - 99", "NHS # - 127", "NHS # - 205", "NHS # - 210", "NHS # - 212"
+        ,"NHS # - 213", "NHS # - 217", "NHS # - 224", "NHS # - 405", "NHS - Non-Highway")
+    ,options = layersControlOptions(collapsed = FALSE)) %>%
+  addPolygons(data = county
+              ,color = "black"
+              ,opacity = .8
+              ,weight = 1
+              ,fillOpacity = .1
+              ,fillColor = "orange"
+              ,group = "Study Area - Counties"
+              ,label = ~str_glue("{NAMELSAD}")
+              ,labelOptions = labelOptions(noHide = F, textOnly = F)
+              ,popup = popup_tbl_pretty(county %>%  select(NAMELSAD))
+  ) %>%
+  addPolygons(data = places
+              ,color = "black"
+              ,opacity = .8
+              ,weight = 1
+              ,fillOpacity = .1
+              ,fillColor = "blue"
+              ,group = "Study Area - Cities<br><hr><strong>NHS Links:</strong>"
+              ,label = ~str_glue("{NAMELSAD}")
+              ,labelOptions = labelOptions(noHide = F, textOnly = F)
+              ,popup = popup_tbl_pretty(places %>%  select(NAMELSAD))
+  ) %>%
+  addPolylines(data = filter(test, is.na(ROUTE_NUM))
+               ,color = "Blue"
+               ,opacity = .8
+               ,weight = 2
+               ,fillOpacity = .1
+               ,fillColor = "blue"
+               ,group = "NHS - Non-Highway"
+               ,popup = popup_tbl_pretty(filter(test, is.na(ROUTE_NUM))))
+
+
+
+
+# length(test_names)
+for (i in 1:(length(test_names))){
+
+  base = base %>%
+    addPolylines(data = test_item[[i]]
+                ,color = "Blue"
+                ,opacity = .8
+                ,weight = 4
+                ,fillOpacity = .1
+                ,fillColor = "blue"
+                ,group = str_glue("NHS # - {test_names[[i]]}")
+                ,label = ~str_glue("NHS # - {test_names[[i]]}")
+                ,labelOptions = labelOptions(noHide = F, textOnly = F)
+                ,popup = popup_tbl_pretty(test_item[[i]])
+    )
+
+  print(i)
+}
+
+base %>%
+  leafem::addMouseCoordinates() %>%
+
+htmlwidgets::saveWidget("./public/NHS_map_2.html")
+
+
+
+
+
+tigris::places(state = "OR") %>%
+  st_transform(4326) %>%
+  st_filter(counties)
+# dataframe of US states with coordinates
+  states <- data.frame(name = state.name,
+                       x = state.center$x,
+                       y = state.center$y,
+                       this = "this",
+                       that = "that")
+  # create sf subsets, with different columns
+  library(sf)
+  states1 <- st_as_sf(states[1:10,1:4], coords = c("x", "y"))
+  states2 <- st_as_sf(states[21:30,c(1:3,5)], coords = c("x", "y"))
+
+  # with dplyr
+  library(dplyr)
+  bind_rows(states1, states2)
+
+  list(states1
+       ,states2) %>%
+    reduce(bind_rows)
+
+
+#SECTION: milepost map==========================================================
+
+  library(leaflet)
+  library(leafem)
+  ## default position is topleft next to zoom control
+
+  img <- "https://www.r-project.org/logo/Rlogo.svg"
+  leaflet() %>% addTiles() %>% addLogo(img, url = "https://www.r-project.org/logo/")
+
+  ## with local image
+  if (requireNamespace("png")) {
+    library(png)
+
+    img <- system.file("img", "Rlogo.png", package="png")
+    leaflet() %>% addTiles() %>% addLogo(img, src = "local", alpha = 0.3)
+
+    ## dancing banana gif :-)
+    m <- leaflet() %>%
+      addTiles() %>%
+      addCircleMarkers(data = breweries91, group = "Yolo") %>%
+      addLayersControl(
+        overlayGroups = c("Yolo gggggggggggg gggggggggggggggg<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;tits <hr> <strong> hfhfh </strong>"),
+        options = layersControlOptions(collapsed = F
+                                       ,maxWidth = 100))
+
+    addLogo(m, "https://jeroenooms.github.io/images/banana.gif",
+            position = "topright",
+            offset.x = 5,
+            offset.y = 10,
+            width = 100,
+            height = 100)
+  }
+
+
+  library(leaflet.extras2)
+
+
+
+
+  temp = read_sf("./data/mileposts/mileposts.shp") %>%
+    st_transform(4326) %>%
+    st_filter(counties) %>%
+    mutate(test = str_glue("{HWYNAME} {HWYNUMB} -- {MP}"))
+
+  temp %>%
+    leaflet() %>%
+    addTiles() %>%
+    addPolylines()
 
 
 

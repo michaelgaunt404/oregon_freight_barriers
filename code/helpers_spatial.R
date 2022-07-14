@@ -52,6 +52,40 @@ self_buffer = function(object, rad_bg = NA, rad_sm = NA, nm = NULL){
   list(on_bg, ob_diff)
 }
 
+st_true_midpoint = function(sf_object){
+  #gets the true midpoint along a curved line
+
+  temp = sf_object %>%
+    mutate(merge_id = row_number())
+
+  sf_object_linestring = temp %>%
+    st_transform(2781) %>%
+    st_cast("LINESTRING") %>%
+    mutate(linestring_id = row_number()) %>%
+    select(merge_id, linestring_id)
+
+  coords_extract = sf_object_linestring %>%
+    st_line_sample(n = 5) %>%
+    st_transform(4326) %>%
+    st_coordinates() %>%
+    data.frame() %>%
+    merge(sf_object_linestring %>%
+            st_drop_geometry(),
+          by.x = "L1", by.y = "linestring_id") %>%
+    group_by(merge_id) %>%
+    mutate(n = ceiling(n()/2),
+           index = row_number()) %>%
+    filter(n == index) %>%
+    ungroup() %>%
+    select(X, Y, merge_id)
+
+  temp %>%
+    st_drop_geometry() %>%
+    merge(coords_extract,
+          by = "merge_id") %>%
+    st_as_sf(coords = c("X", "Y"), crs = 4326)
+}
+
 #SECTION: LEAFLET PACKAGE=======================================================
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 quick_leaflet = function(data, markers = F, lines = F, polys = F){
