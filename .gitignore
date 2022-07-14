@@ -23,7 +23,7 @@
 cache/
 data/
 output/
-public/*/
+
 
 analysis/figure
 analysis/*png
