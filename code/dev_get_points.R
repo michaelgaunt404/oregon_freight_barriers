@@ -138,10 +138,10 @@ name_list = c("M.P.", "Br.#", "Name", "Year Built", "Design Load",
               ,"missing", 'flag_county_region', 'flag_odot_bridge', 'flag_route')
 
 data = here("data/vertical_pp/bridgeloginExcel.xlsx") %>%
-  read_xlsx(skip = 525)
+  readxl::read_xlsx(skip = 525)
 
 data_map = here("data/vertical_pp/bridgeloginExcel_map.xlsx") %>%
-  read_xlsx(sheet = "Sheet2") %>%
+  readxl::read_xlsx(sheet = "Sheet2") %>%
   pivot_longer(cols = codes_1:codes_5) %>%
   mutate(road_names = value %>%
            str_remove_all("[:punct:]") %>%
@@ -284,7 +284,7 @@ data_cleaned_filtered = data_cleaned_filtered %>%
 
 ##sub: combined data get object-----
 data_get = data_cleaned_filtered %>%
-  select(get_data_id, name, look_up, look_up_super_spec,
+  select(get_data_id, br_number, name, look_up, look_up_super_spec,
          starts_with("flag"), starts_with("temp_"), clearence_vert ) %>%
   pivot_longer(cols = starts_with("temp_"), values_to = "primary",
                names_to = "check") %>%
@@ -313,7 +313,7 @@ data_get_hwy_over_hwy = data_get %>%
   filter(str_detect(look_up_super_spec, "Hwy")) %>%
   mutate(look_up_super_ss = parse_number(look_up_super_spec)) %>%
   merge(data_map, by.x = "look_up_super_ss", by.y = "hwy_num" ) %>%
-  select(get_data_id, name, look_up_super_spec, look_up_super_ss, road_names, primary, primary_cleaned) %>%
+  select(get_data_id, br_number, name, look_up_super_spec, look_up_super_ss, road_names, primary, primary_cleaned) %>%
   unique() %>%
   mutate(check_same_road = primary_cleaned == road_names)
 
@@ -423,7 +423,7 @@ fully_merged = coords_good_comb %>%
         ,by.x = c("get_data_id", "under_used")
         ,by.y = c("get_data_id", "primary_cleaned")) %>%
   arrange(get_data_id, row_index) %>%
-  select(get_data_id, network_id, row_index, primary
+  select(get_data_id, network_id, row_index, br_number, primary
          ,over_used, fullname, name, look_up, look_up_super_spec, over_used
          ,everything())
 
@@ -459,102 +459,86 @@ fully_merged_jit = fully_merged %>%
   slice(1) %>%
   ungroup()
 
-# mapview(fully_merged_jit)
 
+# yolo = fully_merged_jit %>%
+#   mutate(across(everything(), ~ifelse(.x == lag(.x),1,0), .names = "{.col}_same"))
+#
+#
+# yolo %>%
+#   mutate(count = yolo %>%
+#            select(ends_with("_same")) %>%
+#            st_drop_geometry() %>%
+#            rowSums(na.rm = T),
+#          percent_dupe = dgt2(count/33)) %>%
+#   select(!ends_with("_same")) %>%
+#   select(percent_dupe, everything()) %>%
+#            view()
+#
+#
+#   data.table() %>%
+#   .[,.(yolo := rowSums(.SD)), .SDcols=patterns("_same")] %>%
+#   glimpse()
+#   mutate(test = sum(ends_with("same"))) %>%
+#   glimpse()
+#
+# # mapview(fully_merged_jit)
+#
 sf::st_write(fully_merged_jit,
           here("data/vertical_pp/processed_vertical_pp.shp"))
 
 
-
-#
-# pal = colorFactor(
-#   rev(viridisLite::viridis(option = "A", begin = .25, end = .75, direction = -1,
-#                            length(levels(fully_merged_jit$check_3)),
-#   )),
-#   fully_merged_jit$check_3)
-#
-# fully_merged_jit_sd = SharedData$new(fully_merged_jit)
-#
-# bscols(
-#   widths = c(12, 2, 10),
-#   filter_slider("d", "id search Numeric:", fully_merged_jit_sd, ~id),
-#   list(
-#     filter_select("fully_merged_jit_sd", "id search:", fully_merged_jit_sd, ~id),
-#
-#     filter_select("check_3", "check_3:", fully_merged_jit_sd, ~check_3)),
-#   leaflet(fully_merged_jit
-#           ,height = 600) %>%
-#     addProviderTiles(providers$CartoDB) %>%
-#     addCircleMarkers(color = "black"
-#                      ,opacity = 1
-#                      ,weight = 1
-#                      ,fillOpacity = .3
-#                      ,fillColor = ~pal(fully_merged_jit$check_3)
-#                      ,label = fully_merged_jit$text %>%
-#                        map(htmltools::HTML)
-#                      # ,group = "Vert. Clearance (HOLPP)"
-#                      ,popup = popup_tbl_pretty(fully_merged_jit)
-#     ) %>%
-#     addLegend(
-#       position = "bottomright"
-#       ,title = "title"
-#       # ,group = "Collisions (>70th percentile)"
-#       ,pal = pal
-#       ,opacity = 0.7
-#       ,values = fully_merged_jit$check_3)
-# )
 
 
 
 
 #summary of extraction==========================================================
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-acquired_ids = coords_good_comb %>%
-  pull(get_data_id) %>%
-  unique()
-
-final_ids = fully_merged_jit %>%
-  pull(get_data_id) %>%
-  unique()
-
-data_get_unique = data_get %>% select(get_data_id, name) %>%  unique()
-data_get_HOH_unique = data_get_hwy_over_hwy %>% select(get_data_id, name) %>%  unique()
-data_get_ROH_unique = data_get_road_over_hwy %>% select(get_data_id, name) %>%  unique()
-
-#using combined df
-# percent matched from original data_get
-((
-  data_get_unique %>%  filter(get_data_id %in% acquired_ids)
-) %>% nrow()) / nrow(data_get_unique)
-
-# percent matched from sent HOH data_get
-((
-  data_get_HOH_unique %>%  filter(get_data_id %in% acquired_ids)
-) %>% nrow()) / nrow(data_get_HOH_unique)
-
-
-# percent matched from sent ROH data_get
-((
-  data_get_ROH_unique %>%  filter(get_data_id %in% acquired_ids)
-) %>% nrow()) / nrow(data_get_ROH_unique)
-
-
-#using final df
-# percent matched from original data_get
-((
-  data_get_unique %>%  filter(get_data_id %in% final_ids)
-) %>% nrow()) / nrow(data_get_unique)
-
-# percent matched from sent HOH data_get
-((
-  data_get_HOH_unique %>%  filter(get_data_id %in% final_ids)
-) %>% nrow()) / nrow(data_get_HOH_unique)
-
-
-# percent matched from sent ROH data_get
-((
-  data_get_ROH_unique %>%  filter(get_data_id %in% final_ids)
-) %>% nrow()) / nrow(data_get_ROH_unique)
+# acquired_ids = coords_good_comb %>%
+#   pull(get_data_id) %>%
+#   unique()
+#
+# final_ids = fully_merged_jit %>%
+#   pull(get_data_id) %>%
+#   unique()
+#
+# data_get_unique = data_get %>% select(get_data_id, name) %>%  unique()
+# data_get_HOH_unique = data_get_hwy_over_hwy %>% select(get_data_id, name) %>%  unique()
+# data_get_ROH_unique = data_get_road_over_hwy %>% select(get_data_id, name) %>%  unique()
+#
+# #using combined df
+# # percent matched from original data_get
+# ((
+#   data_get_unique %>%  filter(get_data_id %in% acquired_ids)
+# ) %>% nrow()) / nrow(data_get_unique)
+#
+# # percent matched from sent HOH data_get
+# ((
+#   data_get_HOH_unique %>%  filter(get_data_id %in% acquired_ids)
+# ) %>% nrow()) / nrow(data_get_HOH_unique)
+#
+#
+# # percent matched from sent ROH data_get
+# ((
+#   data_get_ROH_unique %>%  filter(get_data_id %in% acquired_ids)
+# ) %>% nrow()) / nrow(data_get_ROH_unique)
+#
+#
+# #using final df
+# # percent matched from original data_get
+# ((
+#   data_get_unique %>%  filter(get_data_id %in% final_ids)
+# ) %>% nrow()) / nrow(data_get_unique)
+#
+# # percent matched from sent HOH data_get
+# ((
+#   data_get_HOH_unique %>%  filter(get_data_id %in% final_ids)
+# ) %>% nrow()) / nrow(data_get_HOH_unique)
+#
+#
+# # percent matched from sent ROH data_get
+# ((
+#   data_get_ROH_unique %>%  filter(get_data_id %in% final_ids)
+# ) %>% nrow()) / nrow(data_get_ROH_unique)
 
 
 
