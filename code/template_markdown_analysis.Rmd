@@ -1,12 +1,11 @@
 ---
 title: "Title"
 subtitle: "Subtitle"
-author: "Mike Gaunt"
+author: "Name"
 date: "`r Sys.Date()`"
 output: 
   html_document:
   toc: TRUE
-  css: ./analysis/style.css
 ---
 
 ```{r setup, include=FALSE}
@@ -36,6 +35,9 @@ knitr::opts_chunk$set(
 <!--#library set-up=============================================================
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #content in this section should be removed if in production - ok for dev -->
+```{r}
+library(tidyverse)
+```
 
 <!--#source helpers/utilities===================================================
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -51,15 +53,69 @@ knitr::opts_chunk$set(
 #use this header to make demarcations/section in code [delete this line]
 #short description -->
 
-::: {.boxobserv}
-lsdiosiufoidsufo
-asdaf
-as
-df
-asd
-as
-df
+# Header
+
+## Header
+
+### Header
+
+#### Header
+
+<details>
+<summary>Click to Expand</summary>
+
+Example of expandable box. 
+
+```{r}
+Sys.Date()
+```
+
+</details>      
+
+Example of inline code: ``r Sys.Date()``       
+
+Example of flex displays. 
+
+:::: {style="display: flex;"}
+
+::: {}
+
+```{r fig.height = 2, fig.width=4}
+plot(mtcars[,c(1:3)])
+```
+
 :::
+
+::: {}
+
+```{r fig.height = 2}
+plot(mtcars[,c(4:6)])
+```
+
+:::
+
+::::
+
+### {-}
+
+### Section 
+
++ point 1
++ point 2
+  - `point2.1`
+  - point2.2
++ point 2
+
+
+### Tab {.tabset}
+
+#### Tab 1
+
+#### Tab 2
+
+### {-}
+
+
 
 <!--end-->
 
