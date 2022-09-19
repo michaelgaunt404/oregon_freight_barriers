@@ -1,11 +1,13 @@
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
-# This is script [[insert brief readme here]]
+# This is script imports and process data for maps.
 #
 # By: mike gaunt, michael.gaunt@wsp.com
 #
-# README: [[insert brief readme here]]
-#-------- [[insert brief readme here]]
+# README: import section
+#-------- processing section
+#-------- processing section makes map color scales
+#-------- --strange that map and color scales are in different scripts
 #
 # *please use 80 character margins
 #
@@ -21,6 +23,7 @@ library(here)
 library(leaflet)
 library(leafpop)
 library(crosstalk)
+library(gauntlet)
 
 #path set-up====================================================================
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -29,12 +32,16 @@ library(crosstalk)
 #source helpers/utilities=======================================================
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #content in this section should be removed if in production - ok for dev
-source(here("code/helpers_general.r"))
-source(here("code/helpers_plotly.r"))
-source(here("code/helpers_DT.r"))
-source(here("code/helpers_spatial.r"))
-source(here("code/helpers_data_import.r"))
+# source(here("code/helpers_general.r"))
+# source(here("code/helpers_plotly.r"))
+# source(here("code/helpers_DT.r"))
+# source(here("code/helpers_spatial.r"))
+# source(here("code/helpers_data_import.r"))
 
+leaflet_default_tiles_index =  c("OSM (default)", "Esri", "CartoDB")
+
+#following functions have been sent to gauntlet package
+#package has not been updated yet
 popup_tbl_pretty = function(data){
   data %>%
     janitor::clean_names() %>%
@@ -43,33 +50,41 @@ popup_tbl_pretty = function(data){
     leafpop::popupTable()
 }
 
-make_honeycomb_counts = function(data, dim){
+st_true_midpoint = function(sf_object){
+  #gets the true midpoint along a curved line
+  temp = sf_object %>%
+    mutate(merge_id = row_number())
 
-  area_honeycomb_grid =
-    data %>%
-    st_transform(2285) %>%
-    st_make_grid(c(dim, dim), what = "polygons", square = FALSE) %>%
-    st_sf() %>%
-    st_cast("MULTIPOLYGON") %>%
-    mutate(grid_id = row.names(.)) %>%
-    st_transform(4326)
+  #new CRS, cast to linestring, selects cols
+  sf_object_linestring = temp %>%
+    st_transform(2781) %>%
+    st_cast("LINESTRING") %>%
+    mutate(linestring_id = row_number()) %>%
+    select(merge_id, linestring_id)
 
-  temp = st_join(area_honeycomb_grid, data) %>%
-    filter(!is.na(Ref)) %>%
-    count(grid_id)
+  #make coords df, pull middle point
+  coords_extract = sf_object_linestring %>%
+    st_line_sample(n = 5) %>%
+    st_transform(4326) %>%
+    st_coordinates() %>%
+    data.frame() %>%
+    merge(sf_object_linestring %>%
+            st_drop_geometry(),
+          by.x = "L1", by.y = "linestring_id") %>%
+    group_by(merge_id) %>%
+    mutate(n = ceiling(n()/2),
+           index = row_number()) %>%
+    filter(n == index) %>%
+    ungroup() %>%
+    select(X, Y, merge_id)
 
-  return(temp)
+  #convert df to spatial
+  temp %>%
+    st_drop_geometry() %>%
+    merge(coords_extract,
+          by = "merge_id") %>%
+    st_as_sf(coords = c("X", "Y"), crs = 4326)
 }
-
-leaflet_default_tiles = function(object){
-  object %>%
-    addTiles(group = "OSM (default)") %>%
-    addProviderTiles(providers$Esri, group = "Esri") %>%
-    addProviderTiles(providers$CartoDB, group = "CartoDB")
-
-}
-
-leaflet_default_tiles_index =  c("OSM (default)", "Esri", "CartoDB")
 
 #source data====================================================================
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -84,46 +99,57 @@ tops = here("data/tops_shp", "Tops.shp") %>%
   read_sf() %>%
   st_transform(st_crs(4326))
 
-tops_fltrd = tops %>%
-  filter(!is.na(ROUTE_NUM)) %>%
-  filter(NHS == 1 |
-           str_detect(ALT_RT_NAM, "CORNELIUS PASS")) %>%
+tops_fltrd =
+  tops %>%
   st_filter(counties) %>%
+  select(ROUTE_NUM, ALT_RT_NAM, ROUTE_ID, NHS, TRUCK, F_SYSTEM, FACILITY_T, ACCESS_CTL,SPEED_LIMT
+         ,LANE_WIDTH, contains("GRADES"), starts_with("SHD_"), contains("AADT")) %>%
+  filter((NHS == 1 & !is.na(ROUTE_NUM)) |
+           (str_detect(ALT_RT_NAM, "CORNELIUS PASS") |
+              str_detect(ALT_RT_NAM, "N LOMBARD") |
+              str_detect(ALT_RT_NAM, "N Lombard") |
+              str_detect(ALT_RT_NAM, "NE LOMBARD") |
+              str_detect(ALT_RT_NAM, "N PHILADELPHIA") |
+              str_detect(ALT_RT_NAM, "N IVANHOE")) |
+           (ROUTE_NUM == 99 & ROUTE_ID == "08100I00") |
+           (ROUTE_ID == "12300I00" & AADT == 8034 & LANE_WIDTH == 18)
+  ) %>%
+  filter(!(ALT_RT_NAM == "N Lombard St" & ROUTE_ID == "630")) %>%
+  filter(!(ROUTE_NUM == 99 & (ROUTE_ID == 8063 | ROUTE_ID == 8064))) %>%
   filter(!st_is_empty(.)) %>%
+  filter(ROUTE_NUM != 213) %>%
   janitor::remove_empty(c("rows")) %>%
   mutate(length = st_length(.)
-         ,NHS = 1
          ,across(c(F_SYSTEM, NHS, FACILITY_T, ACCESS_CTL, ROUTE_ID), as.factor)) %>%
-  select(ROUTE_NUM, ALT_RT_NAM, ROUTE_ID, NHS, TRUCK, F_SYSTEM, FACILITY_T, ACCESS_CTL,SPEED_LIMT
-         ,LANE_WIDTH, contains("GRADES"), starts_with("SHD_"), contains("AADT"), length) %>%
   mutate(length_miles = as.numeric(length/1609.344)
          ,VMT = (AADT/2)*365*length_miles
          ,VMT_adj = VMT/1000000
          ,VMT_comb = (AADT_COMBI/2)*365*length_miles
          ,VMT_comb_adj = VMT_comb/1000000
-         ,across(starts_with("GRADES"), ~replace_na(.x, 0))) %>%
+         # ,across(starts_with("GRADES"), ~replace_na(.x, 0))
+         ) %>%
   select(!length)
 
 bridge20 = here("data/Data - Structures", "bridges_2020.shp") %>%
   read_sf() %>%
   st_transform(st_crs(4326))
 
-clack = here("data/Data - HERS", "Mult_Clack_Wash_2020HERS_data.shp") %>%
-  read_sf() %>%
-  st_transform(st_crs(4326)) %>%
-  mutate(F_SYSTEM = as.factor(F_SYSTEM))
+# clack = here("data/Data - HERS", "Mult_Clack_Wash_2020HERS_data.shp") %>%
+#   read_sf() %>%
+#   st_transform(st_crs(4326)) %>%
+#   mutate(F_SYSTEM = as.factor(F_SYSTEM))
 
-route_reduction = here("data/Data - Other", "reduction_review_routes.shp") %>%
-  read_sf() %>%
-  st_transform(st_crs(4326)) %>%
-  st_zm() %>%
-  st_filter(counties) %>%
-  select(HWYNAME, I_RTE:OR_RTE_2) %>%
-  mutate(name = case_when(!is.na(I_RTE)~I_RTE
-                          ,!is.na(US_RTE_1)~US_RTE_1
-                          ,!is.na(US_RTE_2)~US_RTE_2
-                          ,!is.na(OR_RTE_1)~OR_RTE_1
-                          ,T~OR_RTE_2))
+# route_reduction = here("data/Data - Other", "reduction_review_routes.shp") %>%
+#   read_sf() %>%
+#   st_transform(st_crs(4326)) %>%
+#   st_zm() %>%
+#   st_filter(counties) %>%
+#   select(HWYNAME, I_RTE:OR_RTE_2) %>%
+#   mutate(name = case_when(!is.na(I_RTE)~I_RTE
+#                           ,!is.na(US_RTE_1)~US_RTE_1
+#                           ,!is.na(US_RTE_2)~US_RTE_2
+#                           ,!is.na(OR_RTE_1)~OR_RTE_1
+#                           ,T~OR_RTE_2))
 
 equity_data = c("statewide_equity_medhigh_disparity","statewide_equity_lowmed_disparity"
                 ,"statewide_equity_low_disparity","statewide_equity_high_disparity") %>%
@@ -190,9 +216,7 @@ holpp = here("data/vertical_pp", "comp_holpp_manual_extract.xlsx") %>%
 #content in this section should be removed if in production - ok for dev
 
 ##sub: HPMS data----
-network = tops_fltrd[tops_fltrd$NHS == 1,] %>%
-  filter(ROUTE_NUM != 213) %>%
-  filter(!st_is_empty(.)) %>% #mapview()
+network = tops_fltrd %>%
   distinct() %>%
   mutate(network_id = row_number())
 
@@ -203,6 +227,14 @@ network_buffer_c_pass = network_buffer %>%
   filter(str_detect(ALT_RT_NAM, "CORNELIUS PASS")) %>%
   select(geometry) %>%
   mutate(flag_c_pass = 1)
+
+network_buffer_l_pass = network_buffer %>%
+  filter(str_detect(ALT_RT_NAM, "LOMBARD") |
+           str_detect(ALT_RT_NAM, "N PHILADELPHIA") |
+           str_detect(ALT_RT_NAM, "N IVANHOE") |
+           str_detect(ALT_RT_NAM, "N RICHMOND")) %>%
+  select(geometry) %>%
+  mutate(flag_l_pass = 1)
 
 ##sub: National truck network data----
 NHS = network
@@ -236,21 +268,27 @@ palF_shd = colorFactor(
 #--->grades factors - any amount of segement that falls in C or higher is bad
 steep_grade =
   network %>%
-  filter(GRADES_C > 0 |
-           GRADES_D > 0 |
-           GRADES_E > 0 |
-           GRADES_F > 0) %>%
   mutate(GRADES_MAX = case_when(GRADES_F > 0~'Grade F (>8.5%)'
                                 ,GRADES_E > 0~'Grade E (6.5%<>8.4%'
                                 ,GRADES_D > 0~'Grade D (4.4%<>6.5%)'
-                                ,T~'Grade C (2.5%<>4.4%)') %>%
-           as.factor()
+                                ,GRADES_C > 0~'Grade C (2.5%<>4.4%)'
+                                ,is.na(GRADES_A) ~ "No Data"
+                                ,T~'Less than 2.5%') %>% as.factor()
          ,GRADES_MAX_pct_seg = ((case_when(GRADES_F > 0~GRADES_F
                                            ,GRADES_E > 0~GRADES_E
                                            ,GRADES_D > 0~GRADES_D
-                                           ,T~GRADES_C))/(GRADES_F+GRADES_E+GRADES_D+GRADES_C+GRADES_B+GRADES_A)) %>%
-           dgt2()) %>%
+                                           ,GRADES_C > 0~GRADES_C
+                                           ,GRADES_B > 0~GRADES_B
+                                           ,GRADES_A > 0~GRADES_A
+                                           ,T~0))/(GRADES_F+GRADES_E+GRADES_D+GRADES_C+GRADES_B+GRADES_A)) %>%
+           dgt2()
+         ,GRADES_MAX = fct_relevel(GRADES_MAX,
+                                   c("No Data", 'Less than 2.5%', 'Grade C (2.5%<>4.4%)'
+                                     , 'Grade D (4.4%<>6.5%)', 'Grade E (6.5%<>8.4%'))) %>%
   select(network_id, ROUTE_NUM:ACCESS_CTL, SPEED_LIMT, starts_with("GRADES"))
+
+steep_grade$GRADES_MAX %>%  levels()
+
 
 pal_grade = colorFactor(
   (viridisLite::viridis(option = "A", begin = .25, end = .75, direction = -1,
@@ -260,15 +298,18 @@ pal_grade = colorFactor(
 
 ##sub: bridge----
 bridge20_res = bridge20 %>%
-  filter(!is.na(WEIGHT_RES)) %>%
-  st_filter(counties) %>%
-  select(BRIDGE_NAM:LANES, WEIGHT_RES) %>%
+  # filter(!is.na(WEIGHT_RES)) %>%
+  st_filter(counties) %>% #mapview(label = "CROSSES")
+  # select(BRIDGE_NAM:LANES, WEIGHT_RES) %>%
   mutate(network_id = case_when(str_detect(CARRIES, "213")~375,
                                 T~NA_real_)) #manual make network_id
 
 ##sub: bottlenecks----
 bottlenecks_mrgd_prssd = bottlenecks_mrgd %>%
-  select(RoadName, FirstName, E.Bottleneck, Type) %>%
+  group_by(HWY) %>%
+  mutate(UserCost_pm_rank = percent_rank(UserCost_pm)) %>%
+  ungroup() %>%
+  select(RoadName, FirstName, E.Bottleneck, Type, UserCost_pm, UserCost_pm_rank) %>%
   mutate(across(c("E.Bottleneck", "Type"), as.factor))
 
 pal_bttlnck = colorFactor(
@@ -288,9 +329,11 @@ pal_disp = colorFactor(
 crashes_fltrd =
   crashes %>%
   st_join(network_buffer_c_pass) %>%
-  mutate(flag_c_pass = replace_na(flag_c_pass, 0)) %>%
+  st_join(network_buffer_l_pass) %>%
+  mutate(across(c(flag_c_pass, flag_l_pass), ~replace_na(.x, 0))) %>%
   filter(NHS_FLG == 1 |
-           flag_c_pass == 1) %>%
+           flag_c_pass == 1 |
+           flag_l_pass == 1) %>%
   st_filter(network_buffer) %>%
   select(NHS_FLG, HWY_NO, HWY_MED_NM, CITY_SECT_NM
          ,ends_with("_SHORT_DESC"), ends_with("_CNT")) %>%
@@ -399,7 +442,10 @@ vert_ppm = here("data/vertical_pp/processed_vertical_pp.shp") %>%
   unique() %>%
   group_by(network_id, route_number, bridge) %>%
   filter(minimum_clearance == min(minimum_clearance)) %>%
-  ungroup()
+  ungroup() %>%
+  filter(bridge_id != "02758A") %>%
+  filter(bridge_id != "02757B") %>%
+  filter(bridge_id != "08589B")
 
 vert_ppm_sd = SharedData$new(vert_ppm)
 
@@ -428,11 +474,13 @@ vert_ppm_merge = vert_ppm %>%
          ,flag_vc_barrier = flag_bridge_t1+flag_bridge_t2) %>%
   select(!geometry)
 
-bottlenecks_snapped = bottlenecks_mrgd_prssd %>%
+bottlenecks_mrgd_prssd_snppd = bottlenecks_mrgd_prssd %>%
   st_true_midpoint() %>%
   st_filter(network_buffer) %>%
   st_join(., network,
-          join = st_nearest_feature, left = T) %>%
+          join = st_nearest_feature, left = T)
+
+bottlenecks_snapped = bottlenecks_mrgd_prssd_snppd %>%
   select(network_id) %>%
   mutate(flag_congestion = 1) %>%
   st_drop_geometry()
