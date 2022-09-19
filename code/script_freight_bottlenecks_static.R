@@ -400,7 +400,13 @@ vert_ppm = here("data/vertical_pp/processed_vertical_pp.shp") %>%
   unique() %>%
   group_by(network_id, route_number, bridge) %>%
   filter(minimum_clearance == min(minimum_clearance)) %>%
-  ungroup()
+  ungroup() %>%
+  filter(bridge_id != '02758A') %>%
+  filter(bridge_id != '02757B') %>%
+  filter(bridge_id != '08589B') %>%
+  filter(network_id != 563)
+
+
 
 vert_ppm_sd = SharedData$new(vert_ppm)
 
@@ -420,8 +426,14 @@ combined_layer = network %>%
                                  ,T~0))
 
 vert_ppm_merge = vert_ppm %>%
+  filter(!(bridge_id == "02757B" | bridge_id == "02758A")) %>%
   mutate(flag_bridge_severity = case_when(minimum_clearance < 16.5~"flag_bridge_t1"
                                         ,T~"flag_bridge_t2")) %>%
+  #section re-snaps network ids to bridge
+  #remove deselect to see mistatch about 16 out of 50 had different network_ids
+  select(!network_id) %>%
+  st_join(., NHS %>%
+            select(network_id), join = st_nearest_feature) %>%
   count(network_id, flag_bridge_severity) %>%
   mutate(n = 1) %>%
   pivot_wider(values_from = n, names_from = flag_bridge_severity) %>%

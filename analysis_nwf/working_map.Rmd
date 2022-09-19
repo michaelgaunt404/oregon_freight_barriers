@@ -1,0 +1,81 @@
+---
+title: "Oregon DOT Region 1 Truck Barrier Analysis"
+subtitle: "NHS Network Barrier Map"
+author: "Mike Gaunt \n michael.gaunt@wsp.com"
+output: html_document
+# runtime: shiny
+---
+
+<style type="text/css">
+.main-container {
+  max-width: 95vw;
+  margin-left: auto;
+  margin-right: auto;
+}
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  cache = FALSE, cache.lazy = FALSE, autodep = TRUE, warning = FALSE, 
+  message = FALSE, echo = TRUE, dpi = 180,
+  fig.width = 8, fig.height = 5, echo = FALSE
+  )
+```
+
+<!--#general comments===========================================================
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#
+# This is [[insert description here - what it does/solve]]
+#
+# By: mike gaunt, michael.gaunt@wsp.com
+#
+# README: [[insert brief readme here]]
+#-------- [[insert brief readme here]]
+#
+# *please use 80 character margins
+# *please go to https://pkgs.rstudio.com/flexdashboard/articles/layouts.html
+# to explore the different layouts available for the flexdashboard framework
+#
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ -->
+
+<!--#library set-up=============================================================
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#content in this section should be removed if in production - ok for dev -->
+```{r}
+library(tidyverse)
+library(here)
+library(leaflet)
+library(leafpop)
+```
+
+<!--#source helpers/utilities===================================================
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#content in this section should be removed if in production - ok for dev -->
+```{r message=FALSE}
+here("code/script_freight_bottlenecks.r") %>%  source()
+```
+
+
+<!--#source data================================================================
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#content in this section should be removed if in production - ok for dev 
+#area to upload data with and to perform initial munging
+#please add test data here so that others may use/unit test these scripts -->
+
+```{r cache=FALSE}
+integrated_map 
+```
+
+```{js}
+function filter_default() {
+    document.getElementById("collision_rate_comb_flg").getElementsByClassName("selectized")[0].selectize.setValue("90th %", false);
+    document.getElementById("flag_vc_brlog").getElementsByClassName("selectized")[0].selectize.setValue("1", false);
+    document.getElementById("count_total_adj").getElementsByClassName("selectized")[0].selectize.setValue("5", false);
+    document.getElementById("flag_min_clearance").getElementsByClassName("selectized")[0].selectize.setValue("Below 15.5 feet", false);
+}
+window.onload = filter_default;
+```
+
+
+
+<!--end-->
